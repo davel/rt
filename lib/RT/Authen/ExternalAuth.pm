@@ -403,7 +403,7 @@ sub DoAuth {
             # Don't continue unless the $username exists in the external service
 
             $RT::Logger->debug("Calling UserExists with \$username ($username) and \$service ($service)");
-            next unless RT::Authen::ExternalAuth::UserExists($username, $service);
+            next unless RT::Authen::ExternalAuth::UserExists($username, $service, $session);
         }
 
         ####################################################################
@@ -415,7 +415,17 @@ sub DoAuth {
 
         # Does user already exist internally to RT?
         $session->{'CurrentUser'} = RT::CurrentUser->new();
-        $session->{'CurrentUser'}->Load($username);
+
+        # if the LDAP search in LDAP::UserExists matched using EmailAddress instead of
+        # Name, load the RT user with that instead.
+        if ($session->{'_ldap_attr_match'} && $session->{'_ldap_attr_match'} eq 'EmailAddress') {
+            $session->{'CurrentUser'}->LoadByEmail($username);
+        }
+        else {
+            $session->{'CurrentUser'}->Load($username);
+        }
+
+        delete $session->{'_ldap_attr_match'};
 
         # Unless we have loaded a valid user with a UserID create one.
         unless ($session->{'CurrentUser'}->Id) {
@@ -647,7 +657,7 @@ sub UserExists {
     # Request a username/password check from the specified service
     # This is only valid for non-SSO services.
 
-    my ($username,$service) = @_;
+    my ($username,$service,$session) = @_;
 
     my $success = 0;
 
@@ -659,7 +669,7 @@ sub UserExists {
     if ($config->{'type'} eq 'db') {
         $success = RT::Authen::ExternalAuth::DBI::UserExists($username,$service);
     } elsif ($config->{'type'} eq 'ldap') {
-        $success = RT::Authen::ExternalAuth::LDAP::UserExists($username,$service);
+        $success = RT::Authen::ExternalAuth::LDAP::UserExists($username,$service,$session);
     }
 
     return $success;
